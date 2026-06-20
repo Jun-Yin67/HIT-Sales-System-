@@ -1,0 +1,376 @@
+DROP USER asstest CASCADE;
+
+
+CREATE USER ASSTEST IDENTIFIED BY test123;
+ALTER USER ASSTEST QUOTA UNLIMITED ON USERS;
+GRANT CONNECT, RESOURCE TO ASSTEST;
+
+Conn asstest/test123@localhost:1521/FREEPDB1;
+
+
+
+@C:\Users\user\Desktop\databasetable.sql
+
+// Testing table
+
+-- Set NULL '     NULL'
+
+====================================
+
+set linesize 30
+
+DESC customer;
+DESC employee;
+DESC vendor;
+DESC product;
+DESC orders;
+DESC orderdetail;
+DESC delivery;
+DESC purchase;
+DESC purchasedetail;
+
+
+set linesize 250
+
+
+select * from customer;
+select * from employee;
+select * from vendor;
+select * from product;
+select * from orders;
+select * from orderdetail;
+select * from delivery;
+select * from purchase;
+select * from purchasedetail;
+
+=================================
+==================================
+DESC customer;
+select * from customer;
+
+DESC employee;
+select * from employee;
+
+DESC vendor;
+select * from vendor;
+
+DESC product;
+select * from product;
+
+DESC orders;
+select * from orders;
+
+DESC orderdetail;
+select * from orderdetail;
+
+DESC delivery;
+select * from delivery;
+
+DESC purchase;
+select * from purchase;
+
+DESC purchasedetail;
+select * from purchasedetail;
+=====================================
+
+
+-----------------------------------------------------------------------------------------------
+1) Generate Invoice for Vendor  (KURT)
+-----------------------------------------------------------------------------------------------
+
+SELECT 
+    p.P_ID AS Purchase_ID,
+    v.Vend_Name AS Vendor_Name,
+    v.Vend_Contact AS Vendor_Contact, 
+    TO_CHAR(p.P_Date, 'DD-MM-YYYY') AS Purchase_Date,
+    pd.Prod_ID AS Product_ID,
+    pr.Prod_Info AS Product_Name,  
+    pd.P_Qty AS Quantity,
+    ROUND(pd.P_Rec, 2) AS Received_Cost,
+    NULL AS Total_Invoice
+FROM Purchase p
+JOIN Vendor v ON p.Vend_ID = v.Vend_ID
+JOIN PurchaseDetail pd ON p.P_ID = pd.P_ID
+JOIN Product pr ON pd.Prod_ID = pr.Prod_ID
+UNION ALL
+SELECT 
+    p.P_ID AS Purchase_ID,
+    v.Vend_Name AS Vendor_Name,
+    v.Vend_Contact AS Vendor_Contact,  
+    TO_CHAR(p.P_Date, 'DD-MM-YYYY') AS Purchase_Date,
+    NULL AS Product_ID,
+    NULL AS Product_Name,  
+    NULL AS Quantity,
+    NULL AS Received_Cost,
+    ROUND(SUM(pd.P_Rec), 2) AS Total_Invoice
+FROM Purchase p
+JOIN Vendor v ON p.Vend_ID = v.Vend_ID
+JOIN PurchaseDetail pd ON p.P_ID = pd.P_ID
+GROUP BY p.P_ID, v.Vend_Name, v.Vend_Contact, p.P_Date
+ORDER BY Purchase_ID, Product_ID NULLS LAST;
+
+--------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------
+2) Generate Invoice for Customer  (KURT)
+-----------------------------------------------------------------------------------------------
+
+SELECT 
+    o.Ord_ID AS Order_ID,
+    c.Cust_Name,
+    c.Cust_Contact,
+    TO_CHAR(o.Ord_Date, 'DD-MM-YYYY') AS Order_Date,
+    p.Prod_Info AS Product_Name,
+    od.OD_Qty AS Quantity,
+    ROUND(p.Prod_Price, 2) AS Unit_Price,
+    ROUND(od.OD_Qty * p.Prod_Price, 2) AS Original_Price,
+    ROUND(od.O_DISC, 2) AS Discount_Applied,
+    ROUND(od.OD_Qty * p.Prod_Price - od.O_DISC, 2) AS Total_Price,
+    ROUND(NVL(d.Del_Fee, 0), 2) AS Delivery_Fee,
+    ROUND(od.OD_Qty * p.Prod_Price - od.O_DISC + NVL(d.Del_Fee, 0), 2) AS Final_Price,
+    o.OD_PayMethod AS Payment_Method,
+    NULL AS Total_Invoice
+FROM Orders o
+JOIN Customer c ON o.Cust_ID = c.Cust_ID
+JOIN OrderDetail od ON o.Ord_ID = od.Ord_ID
+JOIN Product p ON od.Prod_ID = p.Prod_ID
+LEFT JOIN Delivery d ON o.Ord_ID = d.Ord_ID
+UNION ALL
+SELECT 
+    o.Ord_ID AS Order_ID,
+    c.Cust_Name,
+    c.Cust_Contact,
+    TO_CHAR(o.Ord_Date, 'DD-MM-YYYY') AS Order_Date,
+    NULL AS Product_Name,
+    NULL AS Quantity,
+    NULL AS Unit_Price,
+    NULL AS Original_Price,
+    NULL AS Discount_Applied,
+    NULL AS Total_Price,
+    NULL AS Delivery_Fee,
+    NULL AS Final_Price,
+    NULL AS Payment_Method,
+    ROUND(SUM(od.OD_Qty * p.Prod_Price - od.O_DISC + NVL(d.Del_Fee, 0)), 2) AS Total_Invoice
+FROM Orders o
+JOIN Customer c ON o.Cust_ID = c.Cust_ID
+JOIN OrderDetail od ON o.Ord_ID = od.Ord_ID
+JOIN Product p ON od.Prod_ID = p.Prod_ID
+LEFT JOIN Delivery d ON o.Ord_ID = d.Ord_ID
+GROUP BY o.Ord_ID, c.Cust_Name, c.Cust_Contact, o.Ord_Date
+ORDER BY Order_ID, Product_Name NULLS LAST;
+
+--------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------
+3) Checking the Current Stock Level  (YONG XEN)
+-----------------------------------------------------------------------------------------------
+
+SELECT 
+    p.PROD_ID,
+    p.PROD_info,
+    COALESCE(pur.Total_Purchased, 0) AS Total_Purchased,
+    COALESCE(ord.Total_Ordered, 0) AS Total_Ordered,
+    p.Prod_Qty AS Current_Stock
+FROM Product p
+LEFT JOIN (
+    SELECT Prod_ID, SUM(P_Qty) AS Total_Purchased
+    FROM PurchaseDetail
+    GROUP BY Prod_ID
+) pur ON p.PROD_ID = pur.Prod_ID
+LEFT JOIN (
+    SELECT Prod_ID, SUM(OD_QTY) AS Total_Ordered
+    FROM OrderDetail
+    GROUP BY Prod_ID
+) ord ON p.PROD_ID = ord.Prod_ID
+ORDER BY 
+    CASE 
+        WHEN p.PROD_ID LIKE 'PR%' THEN 0
+        ELSE 1
+    END,
+    p.PROD_ID;
+
+
+--------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------
+4) Total Purchase Revenue Grouped by Customer  (JUN YIN)
+-----------------------------------------------------------------------------------------------
+
+SELECT 
+    C.CUST_ID,
+    C.CUST_NAME,
+    C.CUST_TYPE,
+    SUM(OD.ORD_PRICE) AS TOTAL_SPENT
+FROM 
+    CUSTOMER C
+JOIN 
+    ORDERS O ON C.CUST_ID = O.CUST_ID
+JOIN 
+    ORDERDETAIL OD ON O.ORD_ID = OD.ORD_ID
+GROUP BY 
+    C.CUST_ID, C.CUST_NAME, C.CUST_TYPE
+ORDER BY 
+C.CUST_ID;
+
+
+--------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------
+5) Most Ordered Products by Quantity  (JUN YIN)
+-----------------------------------------------------------------------------------------------
+
+SELECT 
+    P.PROD_ID,
+    P.PROD_INFO,
+    P.PROD_TYPE,
+    P.PROD_SUBCATEGORY,
+    SUM(OD.OD_QTY) AS TOTAL_ORDERED,
+    SUM(OD.OD_QTY * P.PROD_PRICE) AS TOTAL_SALES
+FROM 
+    ORDERDETAIL OD
+JOIN 
+    PRODUCT P ON OD.PROD_ID = P.PROD_ID
+GROUP BY 
+    P.PROD_ID, P.PROD_INFO, P.PROD_TYPE, P.PROD_SUBCATEGORY
+ORDER BY 
+    TOTAL_ORDERED DESC;
+
+
+--------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------
+6) Unpurchased Products  (YONG XEN)
+-----------------------------------------------------------------------------------------------
+
+SELECT p.Prod_ID, p.Prod_Info, p.Prod_Qty
+FROM Product p
+WHERE p.Prod_ID NOT IN (
+    SELECT DISTINCT od.Prod_ID
+    FROM OrderDetail od
+)
+ORDER BY 
+    CASE 
+        WHEN p.Prod_ID LIKE 'PR%' THEN 0
+        ELSE 1
+    END,
+    p.Prod_ID;
+
+
+--------------------------------------------------------------------------------------------------
+
+
+
+EXTRA
+
+--------------------------------------
+1 vendor invoice
+--------------------------------------
+SELECT 
+    p.P_ID AS Purchase_ID,
+    v.Vend_Name AS Vendor_Name,
+    v.Vend_Contact AS Vendor_Contact, 
+    TO_CHAR(p.P_Date, 'DD-MM-YYYY') AS Purchase_Date,
+    pd.Prod_ID AS Product_ID,
+    pr.Prod_Info AS Product_Name,  
+    pd.P_Qty AS Quantity,
+    ROUND(pd.P_Rec, 2) AS Received_Cost,
+    NULL AS Total_Invoice
+FROM Purchase p
+JOIN Vendor v ON p.Vend_ID = v.Vend_ID
+JOIN PurchaseDetail pd ON p.P_ID = pd.P_ID
+JOIN Product pr ON pd.Prod_ID = pr.Prod_ID
+WHERE v.Vend_ID = 'V001'
+UNION ALL
+SELECT 
+    p.P_ID AS Purchase_ID,
+    v.Vend_Name AS Vendor_Name,
+    v.Vend_Contact AS Vendor_Contact,  
+    TO_CHAR(p.P_Date, 'DD-MM-YYYY') AS Purchase_Date,
+    NULL AS Product_ID,
+    NULL AS Product_Name,  
+    NULL AS Quantity,
+    NULL AS Received_Cost,
+    ROUND(SUM(pd.P_Rec), 2) AS Total_Invoice
+FROM Purchase p
+JOIN Vendor v ON p.Vend_ID = v.Vend_ID
+JOIN PurchaseDetail pd ON p.P_ID = pd.P_ID
+WHERE v.Vend_ID = 'V001'
+GROUP BY p.P_ID, v.Vend_Name, v.Vend_Contact, p.P_Date
+ORDER BY Purchase_ID, Product_ID NULLS LAST;
+
+--------------------------------------
+
+
+
+--------------------------------------
+1 customer invoice
+--------------------------------------
+SELECT 
+    o.Ord_ID AS Order_ID,
+    c.Cust_Name,
+    c.Cust_Contact,
+    TO_CHAR(o.Ord_Date, 'DD-MM-YYYY') AS Order_Date,
+    p.Prod_Info AS Product_Name,
+    od.OD_Qty AS Quantity,
+    ROUND(p.Prod_Price, 2) AS Unit_Price,
+    ROUND(od.OD_Qty * p.Prod_Price, 2) AS Original_Price,
+    ROUND(od.O_DISC, 2) AS Discount_Applied,
+    ROUND(od.OD_Qty * p.Prod_Price - od.O_DISC, 2) AS Total_Price,
+    ROUND(NVL(d.Del_Fee, 0), 2) AS Delivery_Fee,
+    ROUND(od.OD_Qty * p.Prod_Price - od.O_DISC + NVL(d.Del_Fee, 0), 2) AS Final_Price,
+    o.OD_PayMethod AS Payment_Method,
+    NULL AS Total_Invoice
+FROM Orders o
+JOIN Customer c ON o.Cust_ID = c.Cust_ID
+JOIN OrderDetail od ON o.Ord_ID = od.Ord_ID
+JOIN Product p ON od.Prod_ID = p.Prod_ID
+LEFT JOIN Delivery d ON o.Ord_ID = d.Ord_ID
+WHERE c.cust_ID = 'A001'
+UNION ALL
+SELECT 
+    o.Ord_ID AS Order_ID,
+    c.Cust_Name,
+    c.Cust_Contact,
+    TO_CHAR(o.Ord_Date, 'DD-MM-YYYY') AS Order_Date,
+    NULL AS Product_Name,
+    NULL AS Quantity,
+    NULL AS Unit_Price,
+    NULL AS Original_Price,
+    NULL AS Discount_Applied,
+    NULL AS Total_Price,
+    NULL AS Delivery_Fee,
+    NULL AS Final_Price,
+    NULL AS Payment_Method,
+    ROUND(SUM(od.OD_Qty * p.Prod_Price - od.O_DISC + NVL(d.Del_Fee, 0)), 2) AS Total_Invoice
+FROM Orders o
+JOIN Customer c ON o.Cust_ID = c.Cust_ID
+JOIN OrderDetail od ON o.Ord_ID = od.Ord_ID
+JOIN Product p ON od.Prod_ID = p.Prod_ID
+LEFT JOIN Delivery d ON o.Ord_ID = d.Ord_ID
+WHERE c.cust_ID = 'A001'
+GROUP BY o.Ord_ID, c.Cust_Name, c.Cust_Contact, o.Ord_Date
+ORDER BY Order_ID, Product_Name NULLS LAST;
+
+--------------------------------------
+
+
+## Get Total Sales per Customer including delivery
+
+=====================================
+SELECT 
+    c.Cust_Name,
+    c.Cust_Contact,
+    ROUND(SUM(od.OD_Qty * p.Prod_Price - od.O_DISC + NVL(d.Del_Fee, 0)), 2) AS Total_Spent
+FROM Orders o
+JOIN Customer c ON o.Cust_ID = c.Cust_ID
+JOIN OrderDetail od ON o.Ord_ID = od.Ord_ID
+JOIN Product p ON od.Prod_ID = p.Prod_ID
+LEFT JOIN Delivery d ON o.Ord_ID = d.Ord_ID
+GROUP BY c.Cust_Name, c.Cust_Contact
+ORDER BY Total_Spent DESC;
+=====================================
